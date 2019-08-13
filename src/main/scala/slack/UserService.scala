@@ -1,10 +1,11 @@
 package slack
 
-import akka.actor.{Status, ActorRef, ActorLogging, Actor}
+import akka.actor.{Actor, ActorLogging, ActorRef, Status}
 import slack.SlackWebProtocol.{User, UserList}
 import akka.pattern.pipe
 
 import scala.collection.mutable
+import scala.concurrent.Future
 
 object UserService {
   sealed trait UserIdentifier
@@ -19,37 +20,51 @@ class UserService()(implicit t:SlackWebAPI.Token) extends Actor with ActorLoggin
   implicit val ctx = context.dispatcher
   implicit val sys = context.system
 
-  val users = SlackWebAPI.createPipeline[UserList]("users.list")
+  val users: Map[String, String] => Future[UserList] = SlackWebAPI.createPipeline[UserList]("users.list")
 
   users(Map()).pipeTo(self)
 
-  def process(r:PartialUserIdentifier, l:List[User], requester:ActorRef):Unit = {
+  def process(partialUserID:PartialUserIdentifier, userList:List[User], requester:ActorRef):Unit = {
     val result =
-      (r match {
-        case UserName(name) => l.find(_.name == name)
-        case UserId(id) => l.find(_.id == id)
+      (partialUserID  match {
+        case UserName(name) =>
+          log.info(s"matching username: $name")
+          val maybeUser = userList.find(_.name == name)
+          log.info(s"maybe user: $maybeUser")
+          maybeUser
+        case UserId(id) =>
+          log.info(s"matching user id")
+          val maybeUser = userList.find(_.id == id)
+          log.info(s"maybe user: $maybeUser")
+          maybeUser
       }) match {
         case Some(user) => All(user.id, user.name, user.profile.email)
-        case None => Status.Failure(new Exception(s"couldn't find user given evidence: $r"))
+        case None => Status.Failure(new Exception(s"couldn't find user given evidence: $partialUserID"))
       }
 
-    log.debug(s"mapped: $r -> $result")
+    log.info(s"mapped: $partialUserID -> $result")
 
     requester ! result
   }
 
   def processing(l:List[User]):Receive = { log.info("state -> processing"); {
-    case r:PartialUserIdentifier => process(r, l, sender())
+    case partialUserID:PartialUserIdentifier =>
+      log.info(s"Processing partial user id")
+      process(partialUserID, l, sender())
   }}
 
   def queueing:Receive = { log.info("state -> queueing")
     val queue = mutable.Queue[(ActorRef, PartialUserIdentifier)]()
 
     {
-      case r:PartialUserIdentifier => queue.enqueue((sender(), r))
-      case UserList(l) =>
-        queue.foreach { case (requester, name) => process(name, l, requester) }
-        context.become(processing(l))
+      case partialUserID:PartialUserIdentifier => queue.enqueue((sender(), partialUserID))
+      case UserList(userList) =>
+        log.info(s"Received user list: $userList")
+        queue.foreach {
+          case (requester, name) =>
+            process(name, userList, requester)
+        }
+        context.become(processing(userList))
     }
   }
 

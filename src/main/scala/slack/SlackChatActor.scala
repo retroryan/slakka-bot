@@ -63,11 +63,13 @@ class SlackChatActor(autostart:Boolean = true)(implicit t:SlackWebAPI.Token) ext
   }}
 
   def disconnected(target:ActorRef):Receive = { log.info("state -> disconnected")
+    log.info(s"connecting web socket to slack")
     val rtmStart = SlackWebAPI.createPipeline[RTMStart]("rtm.start")
     rtmStart(Map()).pipeTo(self)
 
     {
       case RTMStart(url, RTMSelf(id, name)) =>
+        log.info(s"RTMStart $url $id $name")
         val slackClient = context.actorOf(Props[WebSocketClient], "wsclient")
         slackClient ! new URI(url)
         target ! RTMSelf(id, name)

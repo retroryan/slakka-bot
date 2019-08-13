@@ -28,10 +28,14 @@ class WebSocketClient extends Actor with ActorLogging {
   def connect(server:URI, client:ActorRef) {
     val endpoint = new Endpoint {
       override def onOpen(session: Session, config: EndpointConfig) {
+
+        log.info(s"config: $config")
         session.addMessageHandler(new Whole[String] {
           override def onMessage(message: String) {
+            log.info(s"received message: $message")
             val parsed = JsonParser(message)
             client ! Received(parsed)
+            client ! parsed
           }
         })
 /* i don't think Slack does this */

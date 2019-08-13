@@ -7,12 +7,17 @@ import akka.pattern.pipe
 import scala.collection.{immutable, mutable}
 
 object IMService {
-  case class OpenIM(userId:String)
-  case class IMOpened(userId:String, channelId:String)
+
+  case class OpenIM(userId: String)
+
+  case class IMOpened(userId: String, channelId: String)
+
 }
 
-class IMService()(implicit t:SlackWebAPI.Token) extends Actor with ActorLogging {
+class IMService()(implicit t: SlackWebAPI.Token) extends Actor with ActorLogging {
+
   import IMService._
+
   implicit val ctx = context.dispatcher
   implicit val sys = context.system
 

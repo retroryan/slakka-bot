@@ -2,18 +2,20 @@ package slack
 
 import SlackWebProtocol._
 import akka.actor.ActorSystem
+import com.typesafe.scalalogging.LazyLogging
 import spray.client.pipelining._
 import spray.http.{FormData, HttpRequest}
 import spray.httpx.SprayJsonSupport._
 import spray.json.{JsObject, JsonReader}
+
 import scala.concurrent.{ExecutionContext, Future}
 
 /*
  * https://api.slack.com/web#basics
  * http://spray.io/documentation/1.2.3/spray-client/#usage
  */
-object SlackWebAPI {
-  case class Token(s:String)
+object SlackWebAPI extends LazyLogging {
+  case class Token(apiToken:String)
   def createPipeline[T](method:String)
                        (implicit ctx:ExecutionContext, system:ActorSystem, rdr:JsonReader[T], token:Token
                        ) : Map[String,String] => Future[T] = {
@@ -23,7 +25,10 @@ object SlackWebAPI {
 
     {
       args:Map[String,String] =>
-        val request:HttpRequest = Post(url, FormData(args ++ Map("token" -> token.s)))
+
+        val data = FormData(args ++ Map("token" -> token.apiToken))
+        logger.info(s"requesting: $method from $url data: $data")
+        val request:HttpRequest = Post(url, data)
         val response:Future[JsObject] = pipeline(request)
 
         /*
@@ -33,8 +38,13 @@ object SlackWebAPI {
          */
 
         response.flatMap(json => json.convertTo[Ok] match {
-          case Ok(true, None) => Future(json.convertTo[T])
-          case Ok(false, Some(msg)) => Future.failed(new Exception(msg))
+          case Ok(true, None) =>
+            logger.info(s"$method create pipeline true and none")
+            logger.info(s"json: $json")
+            Future(json.convertTo[T])
+          case Ok(false, Some(msg)) =>
+            logger.info(s"$method create pipeline false and msg")
+            Future.failed(new Exception(msg))
         })
     }
   }
